@@ -96,4 +96,98 @@ describe("ToolOrchestrator", () => {
     expect(result.content).toContain("timed out");
     expect(aborted).toBe(true);
   });
+
+  it("returns promptly when the parent call is cancelled", async () => {
+    const registry = new ToolRegistry();
+    const controller = new AbortController();
+    let handlerStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      handlerStarted = resolve;
+    });
+    registry.register("core", {
+      name: "shell.ignores_abort",
+      description: "Never-ending tool",
+      inputSchema: { type: "object" },
+      risk: "execute",
+      handler: async () => {
+        handlerStarted();
+        return new Promise(() => undefined);
+      },
+    });
+    const eventTypes: string[] = [];
+    const events = new EventBus();
+    events.subscribe((event) => eventTypes.push(event.type));
+    const orchestrator = new ToolOrchestrator(registry, new DefaultExecutionPolicy(), events, {
+      timeoutMs: 5_000,
+    });
+
+    const execution = orchestrator.execute(
+      { id: "call-4", name: "shell.ignores_abort", input: {} },
+      { ...context, signal: controller.signal, approvalToken: "approved" },
+    );
+    await started;
+    controller.abort();
+    const result = await execution;
+
+    expect(result).toMatchObject({ content: "Tool execution cancelled", isError: true });
+    expect(eventTypes).toEqual(["tool.execution.started", "tool.execution.cancelled"]);
+  });
+
+  it("reports unknown tools and handler failures through the event stream", async () => {
+    const registry = new ToolRegistry();
+    registry.register("core", {
+      name: "core.fails",
+      description: "Failing tool",
+      inputSchema: { type: "object" },
+      risk: "read",
+      handler: async () => {
+        throw new Error("handler failed");
+      },
+    });
+    const eventTypes: string[] = [];
+    const events = new EventBus();
+    events.subscribe((event) => eventTypes.push(event.type));
+    const orchestrator = new ToolOrchestrator(registry, new DefaultExecutionPolicy(), events);
+
+    const unknown = await orchestrator.execute(
+      { id: "call-5", name: "core.missing", input: {} },
+      context,
+    );
+    const failed = await orchestrator.execute(
+      { id: "call-6", name: "core.fails", input: {} },
+      context,
+    );
+
+    expect(unknown.isError).toBe(true);
+    expect(failed).toMatchObject({ content: "handler failed", isError: true });
+    expect(eventTypes).toEqual([
+      "tool.execution.unknown",
+      "tool.execution.started",
+      "tool.execution.failed",
+    ]);
+  });
+
+  it("does not treat an empty approval token as approval", async () => {
+    const registry = new ToolRegistry();
+    registry.register("core", {
+      name: "core.write",
+      description: "Write data",
+      inputSchema: { type: "object" },
+      risk: "write",
+      handler: async () => ({ content: "written" }),
+    });
+    const orchestrator = new ToolOrchestrator(
+      registry,
+      new DefaultExecutionPolicy(),
+      new EventBus(),
+    );
+
+    const result = await orchestrator.execute(
+      { id: "call-7", name: "core.write", input: {} },
+      { ...context, approvalToken: " " },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Approval required");
+  });
 });

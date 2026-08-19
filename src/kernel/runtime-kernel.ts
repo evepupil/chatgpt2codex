@@ -1,11 +1,13 @@
 import type {
   ExecutionPolicy,
   RuntimePlugin,
+  RuntimePluginManifest,
   ToolCall,
+  ToolDefinition,
   ToolExecutionContext,
   ToolResult,
 } from "./contracts.js";
-import { EventBus } from "./event-bus.js";
+import { EventBus, type RuntimeEventListener } from "./event-bus.js";
 import { ToolOrchestrator, DefaultExecutionPolicy } from "./orchestrator.js";
 import { PluginHost } from "./plugin-host.js";
 import { ToolRegistry, type ToolListOptions } from "./tool-registry.js";
@@ -38,8 +40,20 @@ export class RuntimeKernel {
     return this.plugins.install(plugin);
   }
 
-  listTools(options?: ToolListOptions) {
+  uninstallPlugin(pluginId: string): Promise<boolean> {
+    return this.plugins.uninstall(pluginId);
+  }
+
+  listPlugins(): readonly RuntimePluginManifest[] {
+    return this.plugins.list();
+  }
+
+  listTools(options?: ToolListOptions): readonly ToolDefinition[] {
     return this.tools.list(options);
+  }
+
+  subscribe(listener: RuntimeEventListener): () => void {
+    return this.events.subscribe(listener);
   }
 
   execute(call: ToolCall, context: ToolExecutionContext): Promise<ToolResult> {

@@ -1,9 +1,11 @@
 import type {
   ExecutionPolicy,
+  PolicyDecision,
   ToolCall,
   ToolDefinition,
   ToolExecutionContext,
   ToolResult,
+  RuntimeEventType,
 } from "./contracts.js";
 import { EventBus } from "./event-bus.js";
 import { ToolRegistry } from "./tool-registry.js";
@@ -11,6 +13,20 @@ import { ToolRegistry } from "./tool-registry.js";
 export interface OrchestratorOptions {
   readonly timeoutMs?: number;
   readonly maxOutputCharacters?: number;
+}
+
+class ToolExecutionCancelledError extends Error {
+  constructor() {
+    super("Tool execution cancelled");
+    this.name = "ToolExecutionCancelledError";
+  }
+}
+
+class ToolExecutionTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Tool timed out after ${timeoutMs}ms`);
+    this.name = "ToolExecutionTimeoutError";
+  }
 }
 
 export class ToolOrchestrator {
@@ -25,15 +41,34 @@ export class ToolOrchestrator {
   ) {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxOutputCharacters = options.maxOutputCharacters ?? 50_000;
+    this.validateOptions();
   }
 
   async execute(call: ToolCall, context: ToolExecutionContext): Promise<ToolResult> {
     const tool = this.registry.get(call.name);
     if (tool === undefined) {
+      this.publish("tool.execution.unknown", { callId: call.id, toolName: call.name });
       return this.error(`Unknown tool: ${call.name}`);
     }
 
-    const decision = await this.policy.evaluate(tool, context);
+    if (context.signal.aborted) {
+      return this.cancelled(call);
+    }
+
+    let decision: PolicyDecision;
+    try {
+      decision = await this.policy.evaluate(tool, context);
+    } catch (error) {
+      const message = this.errorMessage(error);
+      this.publish("tool.execution.failed", {
+        callId: call.id,
+        toolName: call.name,
+        phase: "policy",
+        message,
+      });
+      return this.error(message);
+    }
+
     if (!decision.allowed) {
       this.publish("tool.execution.denied", {
         callId: call.id,
@@ -43,21 +78,26 @@ export class ToolOrchestrator {
       return this.error(decision.reason ?? "Tool execution denied");
     }
 
+    if (context.signal.aborted) {
+      return this.cancelled(call);
+    }
+
     this.publish("tool.execution.started", { callId: call.id, toolName: call.name });
     const controller = new AbortController();
-    const stopParentSignal = this.forwardAbort(context.signal, controller);
+    const cancellation = this.createCancellation(context.signal, controller);
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
     try {
-      const result = await Promise.race([
+      const handler = Promise.resolve().then(() =>
         tool.handler(call.input, { ...context, signal: controller.signal }),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => {
-            controller.abort();
-            reject(new Error(`Tool timed out after ${this.timeoutMs}ms`));
-          }, this.timeoutMs);
-        }),
-      ]);
+      );
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort(new ToolExecutionTimeoutError(this.timeoutMs));
+          reject(new ToolExecutionTimeoutError(this.timeoutMs));
+        }, this.timeoutMs);
+      });
+      const result = await Promise.race([handler, timeoutPromise, cancellation.promise]);
       const normalized = this.limitOutput(result);
       this.publish("tool.execution.completed", {
         callId: call.id,
@@ -66,14 +106,37 @@ export class ToolOrchestrator {
       });
       return normalized;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Tool execution failed";
-      this.publish("tool.execution.failed", { callId: call.id, toolName: call.name, message });
+      if (error instanceof ToolExecutionCancelledError) {
+        this.publish("tool.execution.cancelled", {
+          callId: call.id,
+          toolName: call.name,
+          message: error.message,
+        });
+        return this.error(error.message);
+      }
+
+      if (error instanceof ToolExecutionTimeoutError) {
+        this.publish("tool.execution.timed_out", {
+          callId: call.id,
+          toolName: call.name,
+          message: error.message,
+        });
+        return this.error(error.message);
+      }
+
+      const message = this.errorMessage(error);
+      this.publish("tool.execution.failed", {
+        callId: call.id,
+        toolName: call.name,
+        phase: "handler",
+        message,
+      });
       return this.error(message);
     } finally {
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
-      stopParentSignal();
+      cancellation.cleanup();
     }
   }
 
@@ -92,25 +155,70 @@ export class ToolOrchestrator {
     return { content, isError: true };
   }
 
-  private publish(type: string, payload: Record<string, unknown>): void {
+  private cancelled(call: ToolCall): ToolResult {
+    this.publish("tool.execution.cancelled", {
+      callId: call.id,
+      toolName: call.name,
+      message: "Tool execution cancelled",
+    });
+    return this.error("Tool execution cancelled");
+  }
+
+  private publish(type: RuntimeEventType, payload: Record<string, unknown>): void {
     this.events.publish({ type, timestamp: new Date().toISOString(), payload });
   }
 
-  private forwardAbort(signal: AbortSignal, controller: AbortController): () => void {
-    if (signal.aborted) {
-      controller.abort(signal.reason);
-      return () => undefined;
+  private createCancellation(
+    signal: AbortSignal,
+    controller: AbortController,
+  ): { promise: Promise<never>; cleanup: () => void } {
+    let listener: (() => void) | undefined;
+    const promise = new Promise<never>((_, reject) => {
+      const cancel = () => {
+        controller.abort(signal.reason);
+        reject(new ToolExecutionCancelledError());
+      };
+
+      if (signal.aborted) {
+        cancel();
+        return;
+      }
+
+      listener = cancel;
+      signal.addEventListener("abort", cancel, { once: true });
+    });
+
+    return {
+      promise,
+      cleanup: () => {
+        if (listener !== undefined) {
+          signal.removeEventListener("abort", listener);
+        }
+      },
+    };
+  }
+
+  private validateOptions(): void {
+    if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 0) {
+      throw new Error("timeoutMs must be a non-negative integer");
     }
 
-    const onAbort = () => controller.abort(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    return () => signal.removeEventListener("abort", onAbort);
+    if (!Number.isInteger(this.maxOutputCharacters) || this.maxOutputCharacters < 0) {
+      throw new Error("maxOutputCharacters must be a non-negative integer");
+    }
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "Tool execution failed";
   }
 }
 
 export class DefaultExecutionPolicy implements ExecutionPolicy {
-  async evaluate(tool: ToolDefinition, context: ToolExecutionContext) {
-    if (tool.risk === "read" || context.approvalToken !== undefined) {
+  async evaluate(tool: ToolDefinition, context: ToolExecutionContext): Promise<PolicyDecision> {
+    if (
+      tool.risk === "read" ||
+      (context.approvalToken !== undefined && context.approvalToken.trim().length > 0)
+    ) {
       return { allowed: true };
     }
 

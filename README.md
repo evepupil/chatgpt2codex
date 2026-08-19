@@ -6,7 +6,7 @@ ChatGPT Web 负责推理，Runtime 负责本地工作区、MCP 工具编排、Se
 
 ## 当前状态
 
-M0 正在进行：Runtime Kernel 的扩展契约、工具注册、插件宿主和基础执行编排已建立。
+M0 已完成：Runtime Kernel 的版本化契约、工具注册、插件生命周期、策略编排和运行事件已通过项目门禁。
 
 ## 开发
 

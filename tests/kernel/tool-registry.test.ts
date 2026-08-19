@@ -33,4 +33,43 @@ describe("ToolRegistry", () => {
       "kernel.internal",
     ]);
   });
+
+  it("filters tools by namespace, capability, and plugin", () => {
+    const registry = new ToolRegistry();
+    registry.register("filesystem-plugin", {
+      ...registration,
+      name: "filesystem.read_file",
+      capabilities: ["filesystem.read"],
+    });
+    registry.register("shell-plugin", {
+      ...registration,
+      name: "shell.run",
+      capabilities: ["process.execute"],
+    });
+
+    expect(
+      registry.list({
+        exposure: "all",
+        namespace: "filesystem",
+        capability: "filesystem.read",
+        pluginId: "filesystem-plugin",
+      }),
+    ).toMatchObject([
+      {
+        contractVersion: "1",
+        name: "filesystem.read_file",
+        namespace: "filesystem",
+        pluginId: "filesystem-plugin",
+      },
+    ]);
+    expect(registry.list({ exposure: "all", namespace: "shell" })).toHaveLength(1);
+  });
+
+  it("requires namespaced tool names", () => {
+    const registry = new ToolRegistry();
+
+    expect(() => registry.register("core", { ...registration, name: "read_file" })).toThrow(
+      "Tool name must use namespace.name: read_file",
+    );
+  });
 });
