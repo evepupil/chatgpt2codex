@@ -1,0 +1,21 @@
+{
+  "name": "gpt-web-codex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An extensible local Agent Runtime for GPT Web coding workflows.",
+  "type": "module",
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "vitest run",
+    "gate": "pnpm format && pnpm check && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
