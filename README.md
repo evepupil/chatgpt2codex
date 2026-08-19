@@ -1,8 +1,8 @@
-# gpt-web-codex
+# chatgpt2codex
 
-一个面向 GPT Web 编程工作流的本地 Agent Runtime。
+一个面向 ChatGPT Web 编程工作流的本地 Agent Runtime。
 
-GPT Web 负责推理，Runtime 负责本地工作区、MCP 工具编排、Session 状态和插件增强。项目保持独立品牌，CloudMind 未来通过可选 Context Provider 接入。
+ChatGPT Web 负责推理，Runtime 负责本地工作区、MCP 工具编排、Session 状态和插件增强。项目保持独立品牌，CloudMind 未来通过可选 Context Provider 接入。
 
 ## 当前状态
 

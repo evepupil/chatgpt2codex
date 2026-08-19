@@ -15,7 +15,7 @@ Kernel 不直接绑定具体存储、模型、MCP Server 或第三方 Context �
 ## 结构与数据流
 
 ```text
-GPT Web / MCP Client
+ChatGPT Web / MCP Client
     -> MCP Gateway
         -> Transport / OAuth / Principal
     -> Runtime Kernel
@@ -34,7 +34,7 @@ Gateway 负责 HTTP Transport、OAuth、用户身份和请求上下文解析；K
 ## 关键决策
 
 1. 核心只依赖版本化契约，插件通过 `PluginContext` 扩展能力。
-2. 工具使用命名空间，GPT Web 只看到经过筛选的工具集合，避免一次暴露所有 MCP 工具。
+2. 工具使用命名空间，ChatGPT Web 只看到经过筛选的工具集合，避免一次暴露所有 MCP 工具。
 3. 工具风险分为读取、写入、执行和网络，策略层统一控制高风险操作。
 4. 插件故障应被隔离，不能破坏 Kernel 或已有 Session。
 5. Session 和 Snapshot 由 Kernel 提供抽象，Git 只是可选的后端实现。

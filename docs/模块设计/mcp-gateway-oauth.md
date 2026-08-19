@@ -12,7 +12,7 @@
 
 - 在本地 Node 进程中提供 `/mcp` Streamable HTTP 入口。
 - 提供 MCP Protected Resource Metadata 和 OAuth Authorization Server Metadata。
-- 通过标准 OAuth Authorization Code + PKCE 流程连接 GPT Web。
+- 通过标准 OAuth Authorization Code + PKCE 流程连接 ChatGPT Web。
 - 为每个 npm 安装实例维护一个 owner 用户和一个 `instanceId`。
 - 首次连接使用一次性配对码，后续使用持久化的 OAuth grant、access token 和 refresh token。
 - 将 OAuth 身份转换为 Kernel 能理解的 principal、scope、project 和 session 上下文。
@@ -28,7 +28,7 @@
 ## 结构与数据流
 
 ```text
-GPT Web
+ChatGPT Web
     -> https://mcp.example.com/mcp
     -> Cloudflare Tunnel
     -> 127.0.0.1:8787
@@ -64,19 +64,19 @@ POST /consent
 ### 首次配对流程
 
 ```text
-gpt-web-codex pair
+chatgpt2codex pair
     -> 生成高强度 pairing code，有效期 10 分钟
     -> 只保存 code hash，终端只显示一次
 
-GPT Web -> POST /mcp
+ChatGPT Web -> POST /mcp
     <- 401 + protected resource metadata
-GPT Web -> /oauth/authorize
+ChatGPT Web -> /oauth/authorize
     -> 用户输入 pairing code
     -> 校验 state、redirect_uri、resource、PKCE
     -> 校验 pairing code 并建立 owner 会话
     -> 用户确认授权
     -> 签发一次性 authorization code
-GPT Web -> /oauth/token
+ChatGPT Web -> /oauth/token
     -> code + code_verifier
     <- access token + refresh token
     -> pairing code 标记为 used
@@ -92,12 +92,12 @@ Runtime 启动
     -> 读取持久化 OAuth signing/cookie keys
     -> 初始化 SQLite Adapter 和 OAuth Provider
 
-GPT Web -> /mcp + access token
+ChatGPT Web -> /mcp + access token
     -> 验证 token
     -> 继续调用 Kernel
 
 access token 过期
-    -> GPT Web 使用 refresh token
+    -> ChatGPT Web 使用 refresh token
     -> 服务端原子轮换 refresh token
     -> 返回新 access token
 ```
@@ -110,7 +110,7 @@ access token 过期
 2. **OAuth 与 Runtime 同进程、模块分层**：初期不拆独立认证服务，减少本地安装、Tunnel 路由和内部信任链。`src/auth/` 只处理认证，`src/gateway/` 负责协议接入，Kernel 不依赖 OAuth 包。
 3. **单用户 owner 模型**：`init` 创建唯一 owner；关闭公开注册。owner 由 `instanceId` 绑定，默认一次只保留一个活动 grant，重新配对时撤销旧 token。
 4. **配对码一次性使用**：配对码使用至少 128 位随机值，保存哈希，设置过期时间、失败次数和 `usedAt`。比较过程需要防止时序泄露，并对授权端点限流。
-5. **认证状态放在用户数据目录**：认证数据库和密钥放在 npm 包目录之外，例如 Windows 的 `%LOCALAPPDATA%\\gpt-web-codex`。包升级不能覆盖它们。
+5. **认证状态放在用户数据目录**：认证数据库和密钥放在 npm 包目录之外，例如 Windows 的 `%LOCALAPPDATA%\\gpt-web-codex`。项目、npm 包和 CLI 使用 `chatgpt2codex`，既定的用户数据目录标识继续保留，包升级不能覆盖其中的数据。
 6. **密钥禁止启动时随机生成**：OAuth signing keys、cookie keys 和加密主密钥必须从持久存储恢复。密钥文件使用操作系统 ACL 或系统凭据存储保护。
 7. **OAuth scope 与 Kernel 风险分层**：初始 scope 为 `runtime:read`、`runtime:write`、`runtime:execute`、`runtime:admin`。scope 只决定能力范围，Kernel policy 决定具体调用是否需要审批。
 8. **MCP resource 严格绑定**：固定 `resource=https://mcp.example.com/mcp`，授权请求和 token 请求都校验 `resource`，MCP 请求验证 issuer、audience、expiry 和 scope。
@@ -198,3 +198,4 @@ PrincipalContext
 ## 改动历史
 
 - 2026-08-19：确定本地单用户 OAuth、一次性配对码、持久化授权和固定 Tunnel hostname 设计。
+- 2026-08-19：公开项目、npm 包和 CLI 统一命名为 `chatgpt2codex`，用户数据目录标识继续使用 `gpt-web-codex`。
