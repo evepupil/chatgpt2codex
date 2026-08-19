@@ -12,3 +12,4 @@ export * from "./state/session-manager.js";
 export * from "./state/snapshot-manager.js";
 export * from "./state/sqlite-state-store.js";
 export * from "./state/workspace-session-manager.js";
+export * from "./mcp/index.js";
