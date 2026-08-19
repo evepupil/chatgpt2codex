@@ -15,7 +15,9 @@ Kernel 不直接绑定具体存储、模型、MCP Server 或第三方 Context �
 ## 结构与数据流
 
 ```text
-MCP Gateway
+GPT Web / MCP Client
+    -> MCP Gateway
+        -> Transport / OAuth / Principal
     -> Runtime Kernel
         -> Tool Registry
         -> Plugin Host
@@ -27,6 +29,8 @@ MCP Gateway
 
 工具调用流程是：发现能力、检查策略、执行工具、规范化结果、应用输出预算、发布事件。
 
+Gateway 负责 HTTP Transport、OAuth、用户身份和请求上下文解析；Kernel 只接收已经验证的执行上下文，不直接依赖 OAuth Provider 或具体的认证存储。单用户 OAuth 的连接设计见 [MCP Gateway 与本地 OAuth](./mcp-gateway-oauth.md)。
+
 ## 关键决策
 
 1. 核心只依赖版本化契约，插件通过 `PluginContext` 扩展能力。
@@ -34,6 +38,7 @@ MCP Gateway
 3. 工具风险分为读取、写入、执行和网络，策略层统一控制高风险操作。
 4. 插件故障应被隔离，不能破坏 Kernel 或已有 Session。
 5. Session 和 Snapshot 由 Kernel 提供抽象，Git 只是可选的后端实现。
+6. OAuth、Transport 和 Tunnel 属于 Gateway 边界，Kernel 通过稳定契约接收 principal、scope、project 和 session 上下文。
 
 ## 当前实现
 
@@ -44,7 +49,7 @@ MCP Gateway
 - `orchestrator.ts`：策略检查、超时、结果截断和事件记录。
 - `runtime-kernel.ts`：组合 Kernel 的公开入口。
 
-当前只实现 M0 基础能力，Session、Snapshot、MCP Transport 和持久化状态将在后续里程碑接入。
+当前只实现 M0 基础能力，Session、Snapshot、MCP Transport、OAuth Gateway 和持久化状态将在后续里程碑接入。
 
 ## 验证方式
 
@@ -58,6 +63,7 @@ MCP Gateway
 - Session Manager、Project Manager 和 SQLite State Store。
 - Snapshot Backend 和 checkpoint/rollback。
 - stdio、HTTP、Streamable HTTP MCP Transport。
+- 本地单用户 OAuth、一次性配对和重启后的授权恢复，设计见 [MCP Gateway 与本地 OAuth](./mcp-gateway-oauth.md)。
 - Workflow 的顺序、并行、条件和补偿执行。
 - Context Provider、Storage、Lifecycle Hook 和 UI 元数据扩展。
 - 插件权限、依赖解析、沙箱和版本迁移。
@@ -65,3 +71,4 @@ MCP Gateway
 ## 改动历史
 
 - 2026-08-19：建立 M0 Kernel 扩展边界和基础实现。
+- 2026-08-19：补充 Gateway 与 Kernel 的 OAuth、Transport 和 principal 边界。
