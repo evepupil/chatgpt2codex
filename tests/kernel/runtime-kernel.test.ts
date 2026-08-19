@@ -51,5 +51,6 @@ describe("RuntimeKernel", () => {
     expect(await kernel.uninstallPlugin("sample")).toBe(true);
     expect(kernel.listTools()).toEqual([]);
     unsubscribe();
+    kernel.close();
   });
 });

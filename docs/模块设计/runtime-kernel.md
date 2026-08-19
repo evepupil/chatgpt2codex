@@ -43,9 +43,9 @@ Gateway 负责 HTTP Transport、OAuth、用户身份和请求上下文解析；K
 - `tool-registry.ts`：工具注册、namespace 解析、exposure/capability/plugin 查询和按插件清理。
 - `plugin-host.ts`：API/依赖检查、安装回滚、生命周期事件、teardown 和卸载。
 - `orchestrator.ts`：策略检查、未知工具处理、父级取消、超时、输出预算和执行事件。
-- `runtime-kernel.ts`：插件安装/卸载、工具发现、事件订阅和工具执行的稳定组合入口。
+- `runtime-kernel.ts`：插件安装/卸载、工具发现、事件订阅、工具执行和 RuntimeState 组合入口。
 
-M0 只实现单工具编排和进程内状态。Session、Snapshot、MCP Transport、OAuth Gateway 和持久化状态在后续里程碑接入。
+M0 的 Kernel 核心只实现单工具编排；M1 通过可注入的 `RuntimeState` 接入 Session、Snapshot 和 SQLite 状态。MCP Transport、OAuth Gateway 和 Workspace 工具在后续里程碑接入。
 
 ## 验证方式
 
@@ -73,3 +73,4 @@ M0 只实现单工具编排和进程内状态。Session、Snapshot、MCP Transpo
 - 2026-08-19：建立 M0 Kernel 扩展边界和基础实现。
 - 2026-08-19：补充 Gateway 与 Kernel 的 OAuth、Transport 和 principal 边界。
 - 2026-08-20：完成 Kernel 版本化契约、工具查询、插件生命周期、取消/超时编排、运行事件和组合入口；M0 验收通过。
+- 2026-08-20：Kernel 组合入口接入 M1 RuntimeState，状态实现归档至 [Session、Snapshot 与 SQLite 状态](./session-snapshot-state.md)。

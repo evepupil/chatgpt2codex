@@ -11,11 +11,13 @@ import { EventBus, type RuntimeEventListener } from "./event-bus.js";
 import { ToolOrchestrator, DefaultExecutionPolicy } from "./orchestrator.js";
 import { PluginHost } from "./plugin-host.js";
 import { ToolRegistry, type ToolListOptions } from "./tool-registry.js";
+import { RuntimeState } from "../state/runtime-state.js";
 
 export interface RuntimeKernelOptions {
   readonly policy?: ExecutionPolicy;
   readonly timeoutMs?: number;
   readonly maxOutputCharacters?: number;
+  readonly state?: RuntimeState;
 }
 
 export class RuntimeKernel {
@@ -23,11 +25,13 @@ export class RuntimeKernel {
   readonly tools: ToolRegistry;
   readonly plugins: PluginHost;
   readonly orchestrator: ToolOrchestrator;
+  readonly state: RuntimeState;
 
   constructor(options: RuntimeKernelOptions = {}) {
     this.events = new EventBus();
     this.tools = new ToolRegistry();
     this.plugins = new PluginHost(this.tools, this.events);
+    this.state = options.state ?? RuntimeState.inMemory();
     this.orchestrator = new ToolOrchestrator(
       this.tools,
       options.policy ?? new DefaultExecutionPolicy(),
@@ -58,5 +62,9 @@ export class RuntimeKernel {
 
   execute(call: ToolCall, context: ToolExecutionContext): Promise<ToolResult> {
     return this.orchestrator.execute(call, context);
+  }
+
+  close(): void {
+    this.state.close();
   }
 }
